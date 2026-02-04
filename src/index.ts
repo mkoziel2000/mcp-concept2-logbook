@@ -16,6 +16,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   Tool,
+  LoggingLevel,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
@@ -28,13 +29,11 @@ import {
   STATIC_ACCESS_TOKEN,
   IS_DEV_SERVER,
   BASE_URL,
+  LOG_LEVEL,
 } from "./oauth.js";
 
 import {
   apiGet,
-  apiPost,
-  apiPatch,
-  apiDelete,
   formatTime,
   formatUserMarkdown,
   formatResultMarkdown,
@@ -106,24 +105,6 @@ const TOOLS: Tool[] = [
       },
     },
   },
-  {
-    name: "concept2_edit_user",
-    description: "Edit the authenticated user's Concept2 profile (email, HR, weight, privacy).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        user: { type: "string", default: "me" },
-        email: { type: "string", description: "New email address." },
-        max_heart_rate: { type: "integer", minimum: 60, maximum: 250 },
-        weight: { type: "integer", description: "Weight in decigrams (e.g. 7500 = 75 kg)." },
-        logbook_privacy: {
-          type: "string",
-          enum: ["private", "partners", "logged_in", "everyone"],
-        },
-      },
-    },
-  },
-
   // Results Tools
   {
     name: "concept2_get_results",
@@ -159,65 +140,6 @@ const TOOLS: Tool[] = [
       required: ["result_id"],
     },
   },
-  {
-    name: "concept2_add_result",
-    description: "Add a new workout result to the Concept2 logbook.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        user: { type: "string", default: "me" },
-        type: {
-          type: "string",
-          enum: ["rower", "skierg", "bike", "dynamic", "slides", "paddle", "water", "snow", "rollerski", "multierg"],
-        },
-        date: { type: "string", description: "Workout date: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS." },
-        distance: { type: "integer", minimum: 1, description: "Distance in meters." },
-        time: { type: "integer", minimum: 1, description: "Time in tenths of a second." },
-        weight_class: { type: "string", enum: ["H", "L"] },
-        workout_type: { type: "string", default: "JustRow" },
-        timezone: { type: "string", description: "IANA timezone." },
-        stroke_rate: { type: "integer", minimum: 1, maximum: 100 },
-        stroke_count: { type: "integer", minimum: 1 },
-        calories_total: { type: "integer", minimum: 0 },
-        drag_factor: { type: "integer", minimum: 1, maximum: 300 },
-        comments: { type: "string", maxLength: 1000 },
-        heart_rate_average: { type: "integer", minimum: 30, maximum: 250 },
-        heart_rate_max: { type: "integer", minimum: 30, maximum: 250 },
-        heart_rate_min: { type: "integer", minimum: 30, maximum: 250 },
-        rest_time: { type: "integer", description: "Rest time in tenths of seconds." },
-        rest_distance: { type: "integer", description: "Rest distance in meters." },
-      },
-      required: ["type", "date", "distance", "time"],
-    },
-  },
-  {
-    name: "concept2_edit_result",
-    description: "Edit an existing workout result (weight class, comments, privacy).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        user: { type: "string", default: "me" },
-        result_id: { type: "integer" },
-        weight_class: { type: "string", enum: ["H", "L"] },
-        comments: { type: "string", maxLength: 1000 },
-        privacy: { type: "string", enum: ["private", "partners", "logged_in", "everyone"] },
-      },
-      required: ["result_id"],
-    },
-  },
-  {
-    name: "concept2_delete_result",
-    description: "Permanently delete a workout result. This cannot be undone.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        user: { type: "string", default: "me" },
-        result_id: { type: "integer" },
-      },
-      required: ["result_id"],
-    },
-  },
-
   // Stroke Data Tools
   {
     name: "concept2_get_strokes",
@@ -232,19 +154,6 @@ const TOOLS: Tool[] = [
       required: ["result_id"],
     },
   },
-  {
-    name: "concept2_delete_strokes",
-    description: "Permanently delete stroke data for a workout. This cannot be undone.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        user: { type: "string", default: "me" },
-        result_id: { type: "integer" },
-      },
-      required: ["result_id"],
-    },
-  },
-
   // Challenge Tools
   {
     name: "concept2_get_challenges",
@@ -302,9 +211,9 @@ async function handleAuthorize(args: { open_browser?: boolean }): Promise<string
   // Check if using static token
   if (tokenManager.isUsingStaticToken()) {
     return (
-      "Already authenticated using static access token.\n\n" +
+      "Already authenticated using access token.\n\n" +
       "You're using CONCEPT2_ACCESS_TOKEN for authentication.\n" +
-      "This is typically used for development/testing against the dev server.\n\n" +
+      "This token was generated from your Concept2 profile.\n\n" +
       "To use OAuth2 flow instead, remove CONCEPT2_ACCESS_TOKEN and set:\n" +
       "- CONCEPT2_CLIENT_ID\n" +
       "- CONCEPT2_CLIENT_SECRET"
@@ -354,9 +263,9 @@ async function handleAuthStatus(): Promise<string> {
 
   // Check for static token first (takes priority over OAuth)
   if (tokenManager.isUsingStaticToken()) {
-    lines.push("\n**Authentication:** Static Token (Dev/Test Mode)");
+    lines.push("\n**Authentication:** Access Token");
     lines.push("- Using CONCEPT2_ACCESS_TOKEN environment variable");
-    lines.push("- Token will not auto-refresh (set new token if it expires)");
+    lines.push("- Tokens expire after 7 days - generate a new one when needed");
     if (CLIENT_ID || CLIENT_SECRET) {
       lines.push("- OAuth credentials present but ignored (ACCESS_TOKEN takes priority)");
     }
@@ -417,29 +326,6 @@ async function handleGetUser(args: { user?: string; response_format?: string }):
     return JSON.stringify(data, null, 2);
   }
   return formatUserMarkdown(data.data);
-}
-
-async function handleEditUser(args: {
-  user?: string;
-  email?: string;
-  max_heart_rate?: number;
-  weight?: number;
-  logbook_privacy?: string;
-}): Promise<string> {
-  const user = args.user || "me";
-  const body: Record<string, unknown> = {};
-
-  if (args.email !== undefined) body.email = args.email;
-  if (args.max_heart_rate !== undefined) body.max_heart_rate = args.max_heart_rate;
-  if (args.weight !== undefined) body.weight = args.weight;
-  if (args.logbook_privacy !== undefined) body.logbook_privacy = args.logbook_privacy;
-
-  if (Object.keys(body).length === 0) {
-    return "No fields provided to update.";
-  }
-
-  const data = await apiPatch(`/users/${user}`, body);
-  return JSON.stringify(data, null, 2);
 }
 
 async function handleGetResults(args: {
@@ -505,84 +391,6 @@ async function handleGetResult(args: {
   return formatResultMarkdown(data.data);
 }
 
-async function handleAddResult(args: {
-  user?: string;
-  type: string;
-  date: string;
-  distance: number;
-  time: number;
-  weight_class?: string;
-  workout_type?: string;
-  timezone?: string;
-  stroke_rate?: number;
-  stroke_count?: number;
-  calories_total?: number;
-  drag_factor?: number;
-  comments?: string;
-  heart_rate_average?: number;
-  heart_rate_max?: number;
-  heart_rate_min?: number;
-  rest_time?: number;
-  rest_distance?: number;
-}): Promise<string> {
-  const user = args.user || "me";
-
-  const body: Record<string, unknown> = {
-    type: args.type,
-    date: args.date,
-    distance: args.distance,
-    time: args.time,
-  };
-
-  if (args.weight_class) body.weight_class = args.weight_class;
-  if (args.workout_type) body.workout_type = args.workout_type;
-  if (args.timezone) body.timezone = args.timezone;
-  if (args.stroke_rate !== undefined) body.stroke_rate = args.stroke_rate;
-  if (args.stroke_count !== undefined) body.stroke_count = args.stroke_count;
-  if (args.calories_total !== undefined) body.calories_total = args.calories_total;
-  if (args.drag_factor !== undefined) body.drag_factor = args.drag_factor;
-  if (args.comments) body.comments = args.comments;
-  if (args.rest_time !== undefined) body.rest_time = args.rest_time;
-  if (args.rest_distance !== undefined) body.rest_distance = args.rest_distance;
-
-  const hr: Record<string, number> = {};
-  if (args.heart_rate_average !== undefined) hr.average = args.heart_rate_average;
-  if (args.heart_rate_max !== undefined) hr.max = args.heart_rate_max;
-  if (args.heart_rate_min !== undefined) hr.min = args.heart_rate_min;
-  if (Object.keys(hr).length > 0) body.heart_rate = hr;
-
-  const data = await apiPost(`/users/${user}/results`, body);
-  return JSON.stringify(data, null, 2);
-}
-
-async function handleEditResult(args: {
-  user?: string;
-  result_id: number;
-  weight_class?: string;
-  comments?: string;
-  privacy?: string;
-}): Promise<string> {
-  const user = args.user || "me";
-  const body: Record<string, unknown> = {};
-
-  if (args.weight_class) body.weight_class = args.weight_class;
-  if (args.comments !== undefined) body.comments = args.comments;
-  if (args.privacy) body.privacy = args.privacy;
-
-  if (Object.keys(body).length === 0) {
-    return "No fields provided to update.";
-  }
-
-  const data = await apiPatch(`/users/${user}/results/${args.result_id}`, body);
-  return JSON.stringify(data, null, 2);
-}
-
-async function handleDeleteResult(args: { user?: string; result_id: number }): Promise<string> {
-  const user = args.user || "me";
-  const data = await apiDelete(`/users/${user}/results/${args.result_id}`);
-  return JSON.stringify(data, null, 2);
-}
-
 async function handleGetStrokes(args: {
   user?: string;
   result_id: number;
@@ -624,12 +432,6 @@ async function handleGetStrokes(args: {
   }
 
   return lines.join("\n");
-}
-
-async function handleDeleteStrokes(args: { user?: string; result_id: number }): Promise<string> {
-  const user = args.user || "me";
-  const data = await apiDelete(`/users/${user}/results/${args.result_id}/strokes`);
-  return JSON.stringify(data, null, 2);
 }
 
 async function handleGetChallenges(args: {
@@ -806,22 +608,12 @@ async function handleToolCall(name: string, args: Record<string, unknown>): Prom
         return await handleLogout();
       case "concept2_get_user":
         return await handleGetUser(args as { user?: string; response_format?: string });
-      case "concept2_edit_user":
-        return await handleEditUser(args as Parameters<typeof handleEditUser>[0]);
       case "concept2_get_results":
         return await handleGetResults(args as Parameters<typeof handleGetResults>[0]);
       case "concept2_get_result":
         return await handleGetResult(args as Parameters<typeof handleGetResult>[0]);
-      case "concept2_add_result":
-        return await handleAddResult(args as Parameters<typeof handleAddResult>[0]);
-      case "concept2_edit_result":
-        return await handleEditResult(args as Parameters<typeof handleEditResult>[0]);
-      case "concept2_delete_result":
-        return await handleDeleteResult(args as Parameters<typeof handleDeleteResult>[0]);
       case "concept2_get_strokes":
         return await handleGetStrokes(args as Parameters<typeof handleGetStrokes>[0]);
-      case "concept2_delete_strokes":
-        return await handleDeleteStrokes(args as Parameters<typeof handleDeleteStrokes>[0]);
       case "concept2_get_challenges":
         return await handleGetChallenges(args as Parameters<typeof handleGetChallenges>[0]);
       case "concept2_get_events":
@@ -851,9 +643,48 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      logging: {},
     },
   }
 );
+
+// ---------------------------------------------------------------------------
+// Logging Helper
+// ---------------------------------------------------------------------------
+
+type LogLevel = "debug" | "info" | "warning" | "error";
+
+const LOG_LEVELS: Record<string, number> = {
+  debug: 0,
+  info: 1,
+  warning: 2,
+  error: 3,
+  none: 4,
+};
+
+function shouldLog(level: LogLevel): boolean {
+  const configuredLevel = LOG_LEVELS[LOG_LEVEL] ?? LOG_LEVELS.none;
+  const messageLevel = LOG_LEVELS[level] ?? 0;
+  return messageLevel >= configuredLevel;
+}
+
+function log(level: LogLevel, message: string, data?: Record<string, unknown>) {
+  if (!shouldLog(level)) return;
+
+  // Log to stderr
+  const timestamp = new Date().toISOString();
+  const dataStr = data ? ` ${JSON.stringify(data)}` : "";
+  console.error(`[${timestamp}] [concept2] [${level.toUpperCase()}] ${message}${dataStr}`);
+
+  // Send to MCP client (shows in Claude)
+  server.sendLoggingMessage({
+    level: level as LoggingLevel,
+    logger: "concept2",
+    data: data ? { message, ...data } : message,
+  }).catch(() => {
+    // Ignore if client doesn't support logging
+  });
+}
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools: TOOLS };
@@ -861,6 +692,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  log("debug", `Tool called: ${name}`, args as Record<string, unknown>);
+
   const result = await handleToolCall(name, (args || {}) as Record<string, unknown>);
   return {
     content: [{ type: "text", text: result }],
@@ -874,7 +707,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[concept2] MCP server started");
+  log("info", "MCP server started", { server: BASE_URL });
 }
 
 main().catch((e) => {

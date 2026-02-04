@@ -2,6 +2,11 @@
   "name": "mcp-concept2-logbook",
   "version": "1.0.0",
   "description": "MCP server for Concept2 Logbook API with automatic OAuth2 authentication",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mkoziel2000/mcp-concept2-logbook.git"
+  },
+  "homepage": "https://github.com/mkoziel2000/mcp-concept2-logbook#readme",
   "type": "module",
   "bin": {
     "mcp-concept2-logbook": "./dist/index.js"

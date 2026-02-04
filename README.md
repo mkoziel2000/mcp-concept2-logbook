@@ -6,9 +6,18 @@ Built with TypeScript. Features automatic OAuth2 authentication with browser-bas
 
 ## Quick Start
 
-1. Get API credentials from the [Concept2 Developer Portal](https://log.concept2.com/developers/keys)
-2. Add `http://localhost:49721/callback` as a redirect URI in your Concept2 app settings
-3. Configure Claude Desktop (see below)
+**Quick setup (token expires in 7 days):**
+
+1. Log in to [log.concept2.com](https://log.concept2.com)
+2. Go to **Profile → Applications → "Connect to Concept2 Logbook API"**
+3. Copy the generated access token
+4. Configure Claude Desktop with `CONCEPT2_ACCESS_TOKEN` (see below)
+
+**Long-term setup (auto-refreshes for 1 year):**
+
+1. Register an app at the [Concept2 Developer Portal](https://log.concept2.com/developers/keys)
+2. Add `http://localhost:49721/callback` as a redirect URI
+3. Configure Claude Desktop with `CLIENT_ID` and `CLIENT_SECRET`
 4. Ask Claude: *"Connect to my Concept2 account"*
 
 ## Installation
@@ -32,7 +41,23 @@ npm run build
 
 ### Claude Desktop
 
-Add to your `claude_desktop_config.json`:
+**Using personal access token (simplest):**
+
+```json
+{
+  "mcpServers": {
+    "concept2": {
+      "command": "npx",
+      "args": ["mcp-concept2-logbook"],
+      "env": {
+        "CONCEPT2_ACCESS_TOKEN": "your_access_token"
+      }
+    }
+  }
+}
+```
+
+**Using OAuth2 flow:**
 
 ```json
 {
@@ -49,26 +74,21 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-For a local/source install, use:
-
+**For a local/source install**, replace `"command": "npx", "args": ["mcp-concept2-logbook"]` with:
 ```json
-{
-  "mcpServers": {
-    "concept2": {
-      "command": "node",
-      "args": ["C:/path/to/mcp-concept2-logbook/dist/index.js"],
-      "env": {
-        "CONCEPT2_CLIENT_ID": "your_client_id",
-        "CONCEPT2_CLIENT_SECRET": "your_client_secret"
-      }
-    }
-  }
-}
+"command": "node",
+"args": ["C:/path/to/mcp-concept2-logbook/dist/index.js"]
 ```
 
 ### Claude Code
 
 ```bash
+# Using personal access token
+claude mcp add concept2 \
+  -e CONCEPT2_ACCESS_TOKEN=your_token \
+  -- npx mcp-concept2-logbook
+
+# Or using OAuth2
 claude mcp add concept2 \
   -e CONCEPT2_CLIENT_ID=your_id \
   -e CONCEPT2_CLIENT_SECRET=your_secret \
@@ -82,16 +102,17 @@ claude mcp add concept2 \
 | `CONCEPT2_CLIENT_ID` | — | OAuth2 Client ID (for OAuth flow) |
 | `CONCEPT2_CLIENT_SECRET` | — | OAuth2 Client Secret (for OAuth flow) |
 | `CONCEPT2_ACCESS_TOKEN` | — | Static access token (for dev/testing) |
-| `CONCEPT2_SCOPES` | `user:read,results:write` | OAuth2 scopes |
+| `CONCEPT2_SCOPES` | `user:read,results:read` | OAuth2 scopes |
 | `CONCEPT2_REDIRECT_PORT` | `49721` | Local port for OAuth2 callback |
 | `CONCEPT2_TOKEN_FILE` | `~/.concept2_mcp_tokens.json` | Token storage path |
 | `CONCEPT2_BASE_URL` | `https://log.concept2.com` | API base URL |
+| `CONCEPT2_LOG_LEVEL` | `none` | Logging: `debug`, `info`, `warning`, `error`, `none` |
 
-**Authentication priority:**
-1. **Static token:** If `ACCESS_TOKEN` is set, it's used for all requests (dev/test mode)
-2. **OAuth2 flow:** Otherwise, use `CLIENT_ID` + `CLIENT_SECRET` with `concept2_authorize`
+**Authentication methods:**
+1. **Access token:** Set `ACCESS_TOKEN` - simplest, no OAuth app registration needed
+2. **OAuth2 flow:** Set `CLIENT_ID` + `CLIENT_SECRET`, then use `concept2_authorize`
 
-> If `ACCESS_TOKEN` is present, OAuth credentials are ignored.
+> If both are set, `ACCESS_TOKEN` takes priority.
 
 ## Tools
 
@@ -108,14 +129,9 @@ claude mcp add concept2 \
 | Tool | Description |
 |------|-------------|
 | `concept2_get_user` | Get user profile (name, country, weight, max HR) |
-| `concept2_edit_user` | Update profile settings |
 | `concept2_get_results` | List workouts with filters (type, date range, pagination) |
 | `concept2_get_result` | Get single workout details |
-| `concept2_add_result` | Log a new workout |
-| `concept2_edit_result` | Edit workout (comments, weight class, privacy) |
-| `concept2_delete_result` | Delete a workout |
 | `concept2_get_strokes` | Get per-stroke data for a workout |
-| `concept2_delete_strokes` | Delete stroke data |
 | `concept2_workout_summary` | Aggregate stats across workouts |
 
 ### Challenges (no auth required)
@@ -138,60 +154,52 @@ claude mcp add concept2 \
 - *"Get stroke data for workout #12345"*
 - *"What challenges are running right now?"*
 
-**Logging workouts:**
-- *"Log a 5000m row, time 20:15.0, stroke rate 28, drag 120"*
-- *"Add a 30 minute SkiErg session, 7500m"*
-
 **Analysis:**
 - *"What's my total distance this month?"*
 - *"Compare my average pace between rower and SkiErg"*
 
 ## Authentication
 
-### Option 1: OAuth2 Flow (Production)
+### Option 1: Personal Access Token (Quick setup)
 
-1. Call `concept2_authorize` → opens browser to Concept2 login
-2. User approves → callback received on `localhost:49721/callback`
-3. Tokens stored in `~/.concept2_mcp_tokens.json`
-4. Tokens auto-refresh before expiry
+The simplest method - no OAuth app registration required:
 
-### Option 2: Static Token (Development)
+1. Log in to [log.concept2.com](https://log.concept2.com)
+2. Go to **Profile → Applications**
+3. Click **"Connect to Concept2 Logbook API"** to generate a token
+4. Set `CONCEPT2_ACCESS_TOKEN` environment variable
 
-For development and testing against `log-dev.concept2.com`:
+> **Note:** Token expires after **7 days**. You'll need to generate a new one weekly.
 
-1. Get an access token from the [Concept2 Dev Portal](https://log-dev.concept2.com/developers/keys)
-2. Set `CONCEPT2_ACCESS_TOKEN` environment variable
-3. Optionally set `CONCEPT2_BASE_URL=https://log-dev.concept2.com`
+### Option 2: OAuth2 Flow (Recommended for long-term use)
 
+One-time setup, then tokens auto-refresh for up to a year:
+
+1. Register app at [Concept2 Developer Portal](https://log.concept2.com/developers/keys)
+2. Add `http://localhost:49721/callback` as redirect URI
+3. Set `CONCEPT2_CLIENT_ID` and `CONCEPT2_CLIENT_SECRET`
+4. Call `concept2_authorize` → opens browser to Concept2 login
+5. Tokens stored in `~/.concept2_mcp_tokens.json` and auto-refresh
+
+> Access tokens refresh automatically. Refresh tokens last **1 year**.
+
+### Development Server
+
+For testing against `log-dev.concept2.com`, add:
 ```json
-{
-  "mcpServers": {
-    "concept2-dev": {
-      "command": "node",
-      "args": ["C:/path/to/mcp-concept2-logbook/dist/index.js"],
-      "env": {
-        "CONCEPT2_ACCESS_TOKEN": "your_dev_access_token",
-        "CONCEPT2_BASE_URL": "https://log-dev.concept2.com"
-      }
-    }
-  }
-}
+"CONCEPT2_BASE_URL": "https://log-dev.concept2.com"
 ```
 
-This bypasses the OAuth flow entirely — useful for testing API calls before implementing the full OAuth integration.
-
-> **Note:** Development server data may be reset periodically. Don't rely on data persisting there.
+> **Note:** Development server data may be reset periodically.
 
 ## API Scopes
 
 | Scope | Access |
 |-------|--------|
 | `user:read` | Read user profile |
-| `user:write` | Read + write user profile |
 | `results:read` | Read workout results |
-| `results:write` | Read + write workout results |
 
-Default: `user:read,results:write`
+Default: `user:read,results:read` (read-only access)
 
 ## Development
 
@@ -204,8 +212,7 @@ npm start            # Run compiled output
 
 ## Notes
 
-- **Redirect URI:** Register `http://localhost:49721/callback` in your Concept2 app settings
-- **Development server:** Concept2 requires initial development against `log-dev.concept2.com`. Use `CONCEPT2_ACCESS_TOKEN` for quick testing, or full OAuth with `CLIENT_ID`/`CLIENT_SECRET`. Contact `ranking@concept2.com` for production approval.
+- **Redirect URI:** Only needed for OAuth2 flow. Register `http://localhost:49721/callback` in your Concept2 app.
 - **Time format:** API uses tenths of seconds (e.g., `12000` = 20:00.0)
 - **Distance:** Always in meters
 - **Weight:** In decigrams (e.g., `7500` = 75.0 kg)

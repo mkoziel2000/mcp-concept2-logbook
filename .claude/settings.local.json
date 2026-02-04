@@ -4,7 +4,8 @@
       "Bash(python -m py_compile:*)",
       "Bash(npm install)",
       "Bash(npm run build:*)",
-      "WebFetch(domain:log-dev.concept2.com)"
+      "WebFetch(domain:log-dev.concept2.com)",
+      "WebFetch(domain:log.concept2.com)"
     ]
   }
 }

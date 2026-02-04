@@ -1,6 +1,30 @@
-import { tokenManager, BASE_URL } from "./oauth.js";
+import { tokenManager, BASE_URL, LOG_LEVEL } from "./oauth.js";
 
 const API_BASE = `${BASE_URL}/api`;
+
+// ---------------------------------------------------------------------------
+// Logging (standalone for api module)
+// ---------------------------------------------------------------------------
+
+type LogLevel = "debug" | "info" | "warning" | "error";
+
+const LOG_LEVELS: Record<string, number> = {
+  debug: 0,
+  info: 1,
+  warning: 2,
+  error: 3,
+  none: 4,
+};
+
+function log(level: LogLevel, message: string, data?: Record<string, unknown>) {
+  const configuredLevel = LOG_LEVELS[LOG_LEVEL] ?? LOG_LEVELS.none;
+  const messageLevel = LOG_LEVELS[level] ?? 0;
+  if (messageLevel < configuredLevel) return;
+
+  const timestamp = new Date().toISOString();
+  const dataStr = data ? ` ${JSON.stringify(data)}` : "";
+  console.error(`[${timestamp}] [concept2:api] [${level.toUpperCase()}] ${message}${dataStr}`);
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -111,14 +135,27 @@ export async function apiGet<T>(
     }
   }
 
+  log("debug", `GET ${path}`, { params, authenticated });
+
   const headers = authenticated ? await getAuthHeaders() : getPublicHeaders();
+  const startTime = Date.now();
   const response = await fetch(url.toString(), { headers });
+  const elapsed = Date.now() - startTime;
+
+  log("debug", `GET ${path} completed`, { status: response.status, elapsed_ms: elapsed });
 
   if (!response.ok) {
+    log("error", `GET ${path} failed`, { status: response.status });
     await handleApiError(response);
   }
 
-  return response.json() as Promise<T>;
+  const data = await response.json() as T;
+  log("debug", `GET ${path} response parsed`, {
+    hasData: !!(data as Record<string, unknown>)?.data,
+    hasMeta: !!(data as Record<string, unknown>)?.meta
+  });
+
+  return data;
 }
 
 export async function apiPost<T>(
